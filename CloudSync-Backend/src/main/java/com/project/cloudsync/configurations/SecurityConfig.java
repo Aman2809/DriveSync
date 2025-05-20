@@ -1,18 +1,11 @@
 package com.project.cloudsync.configurations;
 
+import com.project.cloudsync.service.DropboxOAuth2UserService;
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
 import org.springframework.security.config.annotation.web.builders.HttpSecurity;
 import org.springframework.security.config.annotation.web.configuration.EnableWebSecurity;
-import org.springframework.security.core.authority.SimpleGrantedAuthority;
-import org.springframework.security.oauth2.client.endpoint.OAuth2AccessTokenResponseClient;
-import org.springframework.security.oauth2.client.endpoint.OAuth2AuthorizationCodeGrantRequest;
 import org.springframework.security.web.SecurityFilterChain;
-import java.util.Collections;
-
-import com.project.cloudsync.service.DropboxOAuth2UserService;
-import org.springframework.beans.factory.annotation.Autowired;
-
 
 @Configuration
 @EnableWebSecurity
@@ -41,4 +34,3 @@ public class SecurityConfig {
         return http.build();
     }
 }
-
