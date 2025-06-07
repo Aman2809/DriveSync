@@ -1,9 +1,8 @@
 package com.project.cloudsync.controller;
 
-import com.project.cloudsync.service.GoogleDriveService;
+import com.project.cloudsync.service.DropboxService;
 import lombok.RequiredArgsConstructor;
 import org.springframework.http.HttpHeaders;
-import org.springframework.http.HttpStatus;
 import org.springframework.http.MediaType;
 import org.springframework.http.ResponseEntity;
 import org.springframework.security.oauth2.client.OAuth2AuthorizedClient;
@@ -13,30 +12,29 @@ import org.springframework.web.bind.annotation.*;
 import org.springframework.web.multipart.MultipartFile;
 
 import java.io.ByteArrayOutputStream;
-import java.io.IOException;
 import java.util.List;
 import java.util.Map;
 
 @RestController
-@RequestMapping("/api/drive")
+@RequestMapping("/api/dropbox")
 @RequiredArgsConstructor
-public class GoogleDriveController {
+public class DropboxController {
 
-    private final GoogleDriveService googleDriveService;
+    private final DropboxService dropboxService;
     private final OAuth2AuthorizedClientService authorizedClientService;
 
     // ============= SYNC FOLDER OPERATIONS =============
 
     @GetMapping("/sync-folder")
     public ResponseEntity<?> checkSyncFolder(
-            @RegisteredOAuth2AuthorizedClient("google") OAuth2AuthorizedClient authorizedClient) {
+            @RegisteredOAuth2AuthorizedClient("dropbox") OAuth2AuthorizedClient authorizedClient) {
         try {
             if (authorizedClient == null) {
-                return ResponseEntity.status(401).body(Map.of("error", "Not authenticated"));
+                return ResponseEntity.status(401).body(Map.of("error", "Not authenticated with Dropbox"));
             }
 
             String accessToken = authorizedClient.getAccessToken().getTokenValue();
-            Map<String, String> folder = googleDriveService.findSyncFolder(accessToken);
+            Map<String, Object> folder = dropboxService.findSyncFolder(accessToken);
 
             if (folder != null) {
                 return ResponseEntity.ok(Map.of(
@@ -53,7 +51,7 @@ public class GoogleDriveController {
             }
         } catch (Exception e) {
             return ResponseEntity.status(500).body(Map.of(
-                    "error", "Failed to check folder",
+                    "error", "Failed to check sync folder",
                     "message", e.getMessage()
             ));
         }
@@ -61,14 +59,14 @@ public class GoogleDriveController {
 
     @PostMapping("/sync-folder")
     public ResponseEntity<?> ensureSyncFolder(
-            @RegisteredOAuth2AuthorizedClient("google") OAuth2AuthorizedClient authorizedClient) {
+            @RegisteredOAuth2AuthorizedClient("dropbox") OAuth2AuthorizedClient authorizedClient) {
         try {
             if (authorizedClient == null) {
-                return ResponseEntity.status(401).body(Map.of("error", "Not authenticated"));
+                return ResponseEntity.status(401).body(Map.of("error", "Not authenticated with Dropbox"));
             }
 
             String accessToken = authorizedClient.getAccessToken().getTokenValue();
-            Map<String, String> folder = googleDriveService.getOrCreateSyncFolder(accessToken);
+            Map<String, Object> folder = dropboxService.getOrCreateSyncFolder(accessToken);
 
             return ResponseEntity.ok(Map.of(
                     "success", true,
@@ -78,7 +76,7 @@ public class GoogleDriveController {
 
         } catch (Exception e) {
             return ResponseEntity.status(500).body(Map.of(
-                    "error", "Failed to create/get folder",
+                    "error", "Failed to create/get sync folder",
                     "message", e.getMessage()
             ));
         }
@@ -88,14 +86,14 @@ public class GoogleDriveController {
 
     @GetMapping("/files")
     public ResponseEntity<?> listAllFiles(
-            @RegisteredOAuth2AuthorizedClient("google") OAuth2AuthorizedClient authorizedClient) {
+            @RegisteredOAuth2AuthorizedClient("dropbox") OAuth2AuthorizedClient authorizedClient) {
         try {
             if (authorizedClient == null) {
-                return ResponseEntity.status(401).body(Map.of("error", "Not authenticated"));
+                return ResponseEntity.status(401).body(Map.of("error", "Not authenticated with Dropbox"));
             }
 
             String accessToken = authorizedClient.getAccessToken().getTokenValue();
-            List<Map<String, String>> files = googleDriveService.listFiles(accessToken);
+            List<Map<String, Object>> files = dropboxService.listAllFiles(accessToken);
 
             return ResponseEntity.ok(Map.of(
                     "success", true,
@@ -113,14 +111,14 @@ public class GoogleDriveController {
 
     @GetMapping("/sync-folder/files")
     public ResponseEntity<?> listSyncFolderFiles(
-            @RegisteredOAuth2AuthorizedClient("google") OAuth2AuthorizedClient authorizedClient) {
+            @RegisteredOAuth2AuthorizedClient("dropbox") OAuth2AuthorizedClient authorizedClient) {
         try {
             if (authorizedClient == null) {
-                return ResponseEntity.status(401).body(Map.of("error", "Not authenticated"));
+                return ResponseEntity.status(401).body(Map.of("error", "Not authenticated with Dropbox"));
             }
 
             String accessToken = authorizedClient.getAccessToken().getTokenValue();
-            List<Map<String, Object>> files = googleDriveService.listFilesInSyncFolder(accessToken);
+            List<Map<String, Object>> files = dropboxService.listFilesInSyncFolder(accessToken);
 
             return ResponseEntity.ok(Map.of(
                     "success", true,
@@ -142,10 +140,10 @@ public class GoogleDriveController {
     @PostMapping("/upload")
     public ResponseEntity<?> uploadFile(
             @RequestParam("file") MultipartFile file,
-            @RegisteredOAuth2AuthorizedClient("google") OAuth2AuthorizedClient authorizedClient) {
+            @RegisteredOAuth2AuthorizedClient("dropbox") OAuth2AuthorizedClient authorizedClient) {
         try {
             if (authorizedClient == null) {
-                return ResponseEntity.status(401).body(Map.of("error", "Not authenticated"));
+                return ResponseEntity.status(401).body(Map.of("error", "Not authenticated with Dropbox"));
             }
 
             if (file.isEmpty()) {
@@ -153,7 +151,7 @@ public class GoogleDriveController {
             }
 
             String accessToken = authorizedClient.getAccessToken().getTokenValue();
-            Map<String, String> uploadedFile = googleDriveService.uploadFileToSyncFolder(accessToken, file);
+            Map<String, Object> uploadedFile = dropboxService.uploadFileToSyncFolder(accessToken, file);
 
             return ResponseEntity.ok(Map.of(
                     "success", true,
@@ -171,17 +169,17 @@ public class GoogleDriveController {
 
     // ============= FILE METADATA OPERATIONS =============
 
-    @GetMapping("/files/{fileId}")
+    @GetMapping("/files/metadata")
     public ResponseEntity<?> getFileMetadata(
-            @PathVariable String fileId,
-            @RegisteredOAuth2AuthorizedClient("google") OAuth2AuthorizedClient authorizedClient) {
+            @RequestParam String filePath,
+            @RegisteredOAuth2AuthorizedClient("dropbox") OAuth2AuthorizedClient authorizedClient) {
         try {
             if (authorizedClient == null) {
-                return ResponseEntity.status(401).body(Map.of("error", "Not authenticated"));
+                return ResponseEntity.status(401).body(Map.of("error", "Not authenticated with Dropbox"));
             }
 
             String accessToken = authorizedClient.getAccessToken().getTokenValue();
-            Map<String, Object> fileMetadata = googleDriveService.getFileMetadata(accessToken, fileId);
+            Map<String, Object> fileMetadata = dropboxService.getFileMetadata(accessToken, filePath);
 
             return ResponseEntity.ok(Map.of(
                     "success", true,
@@ -199,14 +197,14 @@ public class GoogleDriveController {
     @GetMapping("/sync-folder/files/search")
     public ResponseEntity<?> searchFileByName(
             @RequestParam String fileName,
-            @RegisteredOAuth2AuthorizedClient("google") OAuth2AuthorizedClient authorizedClient) {
+            @RegisteredOAuth2AuthorizedClient("dropbox") OAuth2AuthorizedClient authorizedClient) {
         try {
             if (authorizedClient == null) {
-                return ResponseEntity.status(401).body(Map.of("error", "Not authenticated"));
+                return ResponseEntity.status(401).body(Map.of("error", "Not authenticated with Dropbox"));
             }
 
             String accessToken = authorizedClient.getAccessToken().getTokenValue();
-            Map<String, Object> file = googleDriveService.findFileByNameInSyncFolder(accessToken, fileName);
+            Map<String, Object> file = dropboxService.findFileByNameInSyncFolder(accessToken, fileName);
 
             if (file != null) {
                 return ResponseEntity.ok(Map.of(
@@ -232,29 +230,26 @@ public class GoogleDriveController {
 
     // ============= FILE DOWNLOAD OPERATIONS =============
 
-    @GetMapping("/files/{fileId}/download")
+    @GetMapping("/files/download")
     public ResponseEntity<?> downloadFile(
-            @PathVariable String fileId,
-            @RegisteredOAuth2AuthorizedClient("google") OAuth2AuthorizedClient authorizedClient) {
+            @RequestParam String filePath,
+            @RegisteredOAuth2AuthorizedClient("dropbox") OAuth2AuthorizedClient authorizedClient) {
         try {
             if (authorizedClient == null) {
-                return ResponseEntity.status(401).body(Map.of("error", "Not authenticated"));
+                return ResponseEntity.status(401).body(Map.of("error", "Not authenticated with Dropbox"));
             }
 
             String accessToken = authorizedClient.getAccessToken().getTokenValue();
 
             // Get file metadata first to get the file name
-            Map<String, Object> fileMetadata = googleDriveService.getFileMetadata(accessToken, fileId);
+            Map<String, Object> fileMetadata = dropboxService.getFileMetadata(accessToken, filePath);
             String fileName = (String) fileMetadata.get("name");
 
             // Download the file content
-            ByteArrayOutputStream fileContent = googleDriveService.downloadFile(accessToken, fileId);
+            ByteArrayOutputStream fileContent = dropboxService.downloadFile(accessToken, filePath);
 
-            // Determine content type
-            String contentType = (String) fileMetadata.get("mimeType");
-            if (contentType == null) {
-                contentType = "application/octet-stream";
-            }
+            // Determine content type (Dropbox doesn't provide MIME type, so we'll use a generic one)
+            String contentType = "application/octet-stream";
 
             return ResponseEntity.ok()
                     .contentType(MediaType.parseMediaType(contentType))
@@ -271,14 +266,14 @@ public class GoogleDriveController {
 
     // ============= FILE UPDATE OPERATIONS =============
 
-    @PutMapping("/files/{fileId}")
+    @PutMapping("/files/update")
     public ResponseEntity<?> updateFile(
-            @PathVariable String fileId,
+            @RequestParam String filePath,
             @RequestParam("file") MultipartFile newFile,
-            @RegisteredOAuth2AuthorizedClient("google") OAuth2AuthorizedClient authorizedClient) {
+            @RegisteredOAuth2AuthorizedClient("dropbox") OAuth2AuthorizedClient authorizedClient) {
         try {
             if (authorizedClient == null) {
-                return ResponseEntity.status(401).body(Map.of("error", "Not authenticated"));
+                return ResponseEntity.status(401).body(Map.of("error", "Not authenticated with Dropbox"));
             }
 
             if (newFile.isEmpty()) {
@@ -286,7 +281,7 @@ public class GoogleDriveController {
             }
 
             String accessToken = authorizedClient.getAccessToken().getTokenValue();
-            Map<String, Object> updatedFile = googleDriveService.updateFile(accessToken, fileId, newFile);
+            Map<String, Object> updatedFile = dropboxService.updateFile(accessToken, filePath, newFile);
 
             return ResponseEntity.ok(Map.of(
                     "success", true,
@@ -304,17 +299,17 @@ public class GoogleDriveController {
 
     // ============= FILE DELETE OPERATIONS =============
 
-    @DeleteMapping("/files/{fileId}")
+    @DeleteMapping("/files/delete")
     public ResponseEntity<?> deleteFile(
-            @PathVariable String fileId,
-            @RegisteredOAuth2AuthorizedClient("google") OAuth2AuthorizedClient authorizedClient) {
+            @RequestParam String filePath,
+            @RegisteredOAuth2AuthorizedClient("dropbox") OAuth2AuthorizedClient authorizedClient) {
         try {
             if (authorizedClient == null) {
-                return ResponseEntity.status(401).body(Map.of("error", "Not authenticated"));
+                return ResponseEntity.status(401).body(Map.of("error", "Not authenticated with Dropbox"));
             }
 
             String accessToken = authorizedClient.getAccessToken().getTokenValue();
-            Map<String, String> result = googleDriveService.deleteFile(accessToken, fileId);
+            Map<String, Object> result = dropboxService.deleteFile(accessToken, filePath);
 
             return ResponseEntity.ok(Map.of(
                     "success", true,
@@ -330,32 +325,18 @@ public class GoogleDriveController {
         }
     }
 
-    // ============= UTILITY ENDPOINTS =============
-
-    @GetMapping("/test")
-    public ResponseEntity<?> test() {
-        return ResponseEntity.ok(Map.of(
-                "message", "Google Drive Controller is working!",
-                "timestamp", System.currentTimeMillis()
-        ));
-    }
-
-
-
-
-
-    // Add these endpoints to GoogleDriveController.java
+    // ============= STORAGE INFO OPERATIONS =============
 
     @GetMapping("/storage-info")
     public ResponseEntity<?> getStorageInfo(
-            @RegisteredOAuth2AuthorizedClient("google") OAuth2AuthorizedClient authorizedClient) {
+            @RegisteredOAuth2AuthorizedClient("dropbox") OAuth2AuthorizedClient authorizedClient) {
         try {
             if (authorizedClient == null) {
-                return ResponseEntity.status(401).body(Map.of("error", "Not authenticated"));
+                return ResponseEntity.status(401).body(Map.of("error", "Not authenticated with Dropbox"));
             }
 
             String accessToken = authorizedClient.getAccessToken().getTokenValue();
-            Map<String, Object> storageInfo = googleDriveService.getStorageInfo(accessToken);
+            Map<String, Object> storageInfo = dropboxService.getStorageInfo(accessToken);
 
             return ResponseEntity.ok(Map.of(
                     "success", true,
@@ -370,22 +351,32 @@ public class GoogleDriveController {
         }
     }
 
-    @GetMapping("/file-exists/{fileId}")
+    // ============= UTILITY ENDPOINTS =============
+
+    @GetMapping("/test")
+    public ResponseEntity<?> test() {
+        return ResponseEntity.ok(Map.of(
+                "message", "Dropbox Controller is working!",
+                "timestamp", System.currentTimeMillis()
+        ));
+    }
+
+    @GetMapping("/file-exists")
     public ResponseEntity<?> checkFileExists(
-            @PathVariable String fileId,
-            @RegisteredOAuth2AuthorizedClient("google") OAuth2AuthorizedClient authorizedClient) {
+            @RequestParam String filePath,
+            @RegisteredOAuth2AuthorizedClient("dropbox") OAuth2AuthorizedClient authorizedClient) {
         try {
             if (authorizedClient == null) {
-                return ResponseEntity.status(401).body(Map.of("error", "Not authenticated"));
+                return ResponseEntity.status(401).body(Map.of("error", "Not authenticated with Dropbox"));
             }
 
             String accessToken = authorizedClient.getAccessToken().getTokenValue();
-            boolean exists = googleDriveService.fileExists(accessToken, fileId);
+            boolean exists = dropboxService.fileExists(accessToken, filePath);
 
             return ResponseEntity.ok(Map.of(
                     "success", true,
                     "exists", exists,
-                    "fileId", fileId
+                    "filePath", filePath
             ));
 
         } catch (Exception e) {
@@ -396,22 +387,22 @@ public class GoogleDriveController {
         }
     }
 
-    @GetMapping("/file-hash/{fileId}")
+    @GetMapping("/file-hash")
     public ResponseEntity<?> getFileContentHash(
-            @PathVariable String fileId,
-            @RegisteredOAuth2AuthorizedClient("google") OAuth2AuthorizedClient authorizedClient) {
+            @RequestParam String filePath,
+            @RegisteredOAuth2AuthorizedClient("dropbox") OAuth2AuthorizedClient authorizedClient) {
         try {
             if (authorizedClient == null) {
-                return ResponseEntity.status(401).body(Map.of("error", "Not authenticated"));
+                return ResponseEntity.status(401).body(Map.of("error", "Not authenticated with Dropbox"));
             }
 
             String accessToken = authorizedClient.getAccessToken().getTokenValue();
-            String contentHash = googleDriveService.getFileMd5Hash(accessToken, fileId);
+            String contentHash = dropboxService.getFileContentHash(accessToken, filePath);
 
             return ResponseEntity.ok(Map.of(
                     "success", true,
-                    "fileId", fileId,
-                    "md5Hash", contentHash
+                    "filePath", filePath,
+                    "contentHash", contentHash
             ));
 
         } catch (Exception e) {
@@ -422,38 +413,39 @@ public class GoogleDriveController {
         }
     }
 
+    // ============= HEALTH CHECK =============
+
     @GetMapping("/health")
     public ResponseEntity<?> healthCheck(
-            @RegisteredOAuth2AuthorizedClient("google") OAuth2AuthorizedClient authorizedClient) {
+            @RegisteredOAuth2AuthorizedClient("dropbox") OAuth2AuthorizedClient authorizedClient) {
         try {
             if (authorizedClient == null) {
                 return ResponseEntity.status(401).body(Map.of(
                         "status", "unauthorized",
-                        "message", "Not authenticated with Google Drive"
+                        "message", "Not authenticated with Dropbox"
                 ));
             }
 
             String accessToken = authorizedClient.getAccessToken().getTokenValue();
-            Map<String, Object> healthInfo = googleDriveService.healthCheck(accessToken);
 
-            return ResponseEntity.ok(healthInfo);
+            // Try to get storage info as a health check
+            Map<String, Object> storageInfo = dropboxService.getStorageInfo(accessToken);
+
+            return ResponseEntity.ok(Map.of(
+                    "status", "healthy",
+                    "authenticated", true,
+                    "message", "Dropbox connection is working",
+                    "timestamp", System.currentTimeMillis()
+            ));
 
         } catch (Exception e) {
             return ResponseEntity.status(503).body(Map.of(
                     "status", "unhealthy",
                     "authenticated", true,
-                    "error", "Google Drive service unavailable",
+                    "error", "Dropbox service unavailable",
                     "message", e.getMessage(),
                     "timestamp", System.currentTimeMillis()
             ));
         }
     }
-
-
-
-
-
-
-
-
 }

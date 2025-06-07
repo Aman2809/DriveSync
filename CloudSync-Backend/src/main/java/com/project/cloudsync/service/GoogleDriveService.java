@@ -9,6 +9,7 @@ import com.google.api.client.json.gson.GsonFactory;
 import com.google.api.client.auth.oauth2.Credential;
 import com.google.api.client.auth.oauth2.BearerToken;
 import com.google.api.services.drive.Drive;
+import com.google.api.services.drive.model.About;
 import com.google.api.services.drive.model.FileList;
 import com.google.api.services.drive.model.File;
 import org.springframework.stereotype.Service;
@@ -390,4 +391,65 @@ public class GoogleDriveService {
 
         return files;
     }
+
+
+
+
+
+
+    // Add these methods to GoogleDriveService.java
+
+    public Map<String, Object> getStorageInfo(String accessToken) throws Exception {
+        Drive driveService = getDriveService(accessToken);
+        About about = driveService.about().get().setFields("storageQuota").execute();
+
+        Map<String, Object> storageInfo = new HashMap<>();
+        storageInfo.put("used", about.getStorageQuota().getUsage());
+        storageInfo.put("allocated", about.getStorageQuota().getLimit());
+
+        long available = about.getStorageQuota().getLimit() - about.getStorageQuota().getUsage();
+        storageInfo.put("available", available);
+
+        double usagePercentage = (double) about.getStorageQuota().getUsage() / about.getStorageQuota().getLimit() * 100;
+        storageInfo.put("usagePercentage", Math.round(usagePercentage * 100.0) / 100.0);
+
+        return storageInfo;
+    }
+
+    public boolean fileExists(String accessToken, String fileId) {
+        try {
+            Drive driveService = getDriveService(accessToken);
+            driveService.files().get(fileId).setFields("id").execute();
+            return true;
+        } catch (Exception e) {
+            return false;
+        }
+    }
+
+    public String getFileMd5Hash(String accessToken, String fileId) throws Exception {
+        Drive driveService = getDriveService(accessToken);
+        File file = driveService.files().get(fileId).setFields("md5Checksum").execute();
+        return file.getMd5Checksum();
+    }
+
+    public Map<String, Object> healthCheck(String accessToken) throws Exception {
+        Drive driveService = getDriveService(accessToken);
+        About about = driveService.about().get().setFields("user,storageQuota").execute();
+
+        Map<String, Object> healthInfo = new HashMap<>();
+        healthInfo.put("status", "healthy");
+        healthInfo.put("authenticated", true);
+        healthInfo.put("userEmail", about.getUser().getEmailAddress());
+        healthInfo.put("storageQuota", about.getStorageQuota());
+        healthInfo.put("timestamp", System.currentTimeMillis());
+
+        return healthInfo;
+    }
+
+
+
+
+
+
+
 }

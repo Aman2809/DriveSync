@@ -24,6 +24,7 @@ public class DropboxOAuth2UserService implements OAuth2UserService<OAuth2UserReq
     @Override
     public OAuth2User loadUser(OAuth2UserRequest userRequest) throws OAuth2AuthenticationException {
         String accessToken = userRequest.getAccessToken().getTokenValue();
+        System.out.println(accessToken);
         DbxRequestConfig config = DbxRequestConfig.newBuilder("cloudsync").build();
 
         try {
