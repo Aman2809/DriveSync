@@ -4,6 +4,8 @@ import com.dropbox.core.DbxException;
 import com.dropbox.core.DbxRequestConfig;
 import com.dropbox.core.v2.DbxClientV2;
 import com.dropbox.core.v2.files.*;
+import com.dropbox.core.v2.sharing.CreateSharedLinkWithSettingsErrorException;
+import com.dropbox.core.v2.sharing.SharedLinkMetadata;
 import com.dropbox.core.v2.users.SpaceUsage;
 import org.springframework.stereotype.Service;
 import org.springframework.web.multipart.MultipartFile;
@@ -431,4 +433,121 @@ public class DropboxService {
         Map<String, Object> metadata = getFileMetadata(accessToken, filePath);
         return (String) metadata.get("contentHash");
     }
+
+
+
+    public Map<String, Object> renameFileOrFolder(String accessToken, String fileId, String newName) throws Exception {
+        DbxClientV2 client = getDropboxClient(accessToken);
+
+        // Step 1: Fetch metadata from file ID
+        ListFolderResult result = client.files().listFolder(SYNC_FOLDER_PATH);
+
+        String currentPath = null;
+
+        // Search for the file inside the sync folder
+        for (Metadata metadata : result.getEntries()) {
+            if (metadata instanceof FileMetadata && ((FileMetadata) metadata).getId().equals(fileId)) {
+                currentPath = metadata.getPathLower();
+                break;
+            }
+        }
+
+        // If not found, check deeper in subfolders (pagination + recursion)
+        while (result.getHasMore()) {
+            result = client.files().listFolderContinue(result.getCursor());
+            for (Metadata metadata : result.getEntries()) {
+                if (metadata instanceof FileMetadata && ((FileMetadata) metadata).getId().equals(fileId)) {
+                    currentPath = metadata.getPathLower();
+                    break;
+                }
+            }
+        }
+
+        if (currentPath == null) {
+            throw new RuntimeException("File with ID " + fileId + " not found in Dropbox sync folder");
+        }
+
+        // Step 2: Build new path using new name
+        String newPath = currentPath.contains("/") ?
+                currentPath.substring(0, currentPath.lastIndexOf("/")) + "/" + newName :
+                "/" + newName;
+
+        // Step 3: Move (rename) the file
+        try {
+            Metadata metadata = client.files().moveV2(currentPath, newPath).getMetadata();
+
+            Map<String, Object> response = new HashMap<>();
+            response.put("oldPath", currentPath);
+            response.put("newPath", newPath);
+            response.put("name", metadata.getName());
+            response.put("status", "renamed");
+            return response;
+
+        } catch (RelocationErrorException e) {
+            throw new RuntimeException("Failed to rename file or folder", e);
+        }
+    }
+
+    public Map<String, Object> createSubFolder(String accessToken, String subFolderName) throws DbxException {
+        DbxClientV2 client = getDropboxClient(accessToken);
+
+        String path = SYNC_FOLDER_PATH + "/" + subFolderName;
+
+        try {
+            FolderMetadata folder = client.files().createFolderV2(path).getMetadata();
+
+            return Map.of(
+                    "path", folder.getPathLower(),
+                    "name", folder.getName(),
+                    "id", folder.getId(),
+                    "status", "created"
+            );
+
+        } catch (CreateFolderErrorException e) {
+            throw new RuntimeException("Failed to create subfolder", e);
+        }
+    }
+
+    public Map<String, Object> moveFile(String accessToken, String sourcePath, String destinationPath) throws DbxException {
+        DbxClientV2 client = getDropboxClient(accessToken);
+
+        try {
+            Metadata metadata = client.files().moveV2(sourcePath, destinationPath).getMetadata();
+
+            return Map.of(
+                    "from", sourcePath,
+                    "to", destinationPath,
+                    "status", "moved",
+                    "name", metadata.getName()
+            );
+
+        } catch (RelocationErrorException e) {
+            throw new RuntimeException("Failed to move file", e);
+        }
+    }
+
+    public String createShareableLink(String accessToken, String filePath) throws DbxException {
+        DbxClientV2 client = getDropboxClient(accessToken);
+
+        try {
+            SharedLinkMetadata sharedLink = client.sharing().createSharedLinkWithSettings(filePath);
+            return sharedLink.getUrl();
+        } catch (CreateSharedLinkWithSettingsErrorException e) {
+            throw new RuntimeException("Failed to create shared link", e);
+        }
+    }
+
+    public byte[] downloadFilePartial(String accessToken, String filePath, int startByte, int endByte) throws DbxException, IOException {
+        ByteArrayOutputStream fullStream = downloadFile(accessToken, filePath);
+        byte[] fullData = fullStream.toByteArray();
+
+        if (startByte < 0 || endByte >= fullData.length || startByte > endByte) {
+            throw new IllegalArgumentException("Invalid byte range");
+        }
+
+        return Arrays.copyOfRange(fullData, startByte, endByte + 1);
+    }
+
+
+
 }

@@ -3,6 +3,7 @@ package com.project.cloudsync.entities;
 import jakarta.persistence.*;
 import lombok.*;
 
+import java.time.LocalDateTime;
 import java.util.List;
 
 @Entity
@@ -13,13 +14,27 @@ import java.util.List;
 public class User {
 
     @Id
-    private String id;
+    @GeneratedValue(strategy = GenerationType.IDENTITY)
+    private Long id;
 
-    private String name;
+    private String email; // from Google/Dropbox profile
 
-    @Column(unique=true)
-    private String email;
+    private String name;  // optional
 
-    @OneToMany(mappedBy = "user" , cascade = CascadeType.ALL)
-    private List<CloudProvider> connectedProviders;
+    // Google Drive tokens
+    private String googleAccessToken;
+    private String googleRefreshToken;
+
+    // Dropbox tokens
+    private String dropboxAccessToken;
+    private String dropboxRefreshToken;
+
+    private String provider; // "GOOGLE" / "DROPBOX"
+
+    // For auditing
+    private LocalDateTime registeredAt;
+    private LocalDateTime lastSyncedAt;
+
+    // Constructors, getters, setters...
 }
+

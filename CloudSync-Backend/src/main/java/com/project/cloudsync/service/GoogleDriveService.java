@@ -95,20 +95,17 @@ public class GoogleDriveService {
         return null;
     }
 
-    // NEW: List files specifically in the sync folder
     public List<Map<String, Object>> listFilesInSyncFolder(String accessToken) throws Exception {
         Drive driveService = getDriveService(accessToken);
 
         // First, get the sync folder
         Map<String, String> syncFolder = findSyncFolder(accessToken);
-        if (syncFolder == null) {
-            throw new RuntimeException("Sync folder not found. Please create it first.");
-        }
 
         String folderId = syncFolder.get("id");
 
         // Query files in the sync folder
         String query = String.format("'%s' in parents and trashed = false", folderId);
+
         FileList result = driveService.files().list()
                 .setQ(query)
                 .setSpaces("drive")
@@ -393,10 +390,6 @@ public class GoogleDriveService {
     }
 
 
-
-
-
-
     // Add these methods to GoogleDriveService.java
 
     public Map<String, Object> getStorageInfo(String accessToken) throws Exception {
@@ -448,8 +441,32 @@ public class GoogleDriveService {
 
 
 
+    public Map<String, Object> findFileByQuery(String accessToken, String query) throws IOException, GeneralSecurityException {
+        // Use Drive API with search query (e.g., "name='file.txt' and ...")
+        Drive drive = getDriveService(accessToken);
+        FileList result = drive.files().list()
+                .setQ(query)
+                .setFields("files(id, name, md5Checksum, modifiedTime, parents)")
+                .execute();
 
+        if (result.getFiles() != null && !result.getFiles().isEmpty()) {
+            File file = result.getFiles().get(0); // Return first match
+            Map<String, Object> fileInfo = new HashMap<>();
+            fileInfo.put("id", file.getId());
+            fileInfo.put("name", file.getName());
+            fileInfo.put("md5Checksum", file.getMd5Checksum());
+            fileInfo.put("modifiedTime", file.getModifiedTime().toString());
+            return fileInfo;
+        }
+        return null;
+    }
 
+    public void renameFile(String accessToken, String fileId, String newName) throws IOException, GeneralSecurityException {
+        Drive drive = getDriveService(accessToken);
+        File file = new File();
+        file.setName(newName);
+        drive.files().update(fileId, file).execute();
+    }
 
 
 }
