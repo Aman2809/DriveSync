@@ -196,7 +196,9 @@
 
 package com.project.cloudsync.service;
 
+import com.project.cloudsync.entities.User;
 import com.project.cloudsync.helper.InMemoryMultipartFile;
+import com.project.cloudsync.repositories.UserRepository;
 import com.project.cloudsync.service.DropboxService;
 import com.project.cloudsync.service.GoogleDriveService;
 import com.project.cloudsync.service.SyncTrackerService;
@@ -223,10 +225,11 @@ public class CloudSyncService {
     private final SyncTrackerService syncTrackerService;
     private final SyncFileRepository syncFileRepository;
 
+
     public CloudSyncService(GoogleDriveService googleDriveService,
                             DropboxService dropboxService,
                             SyncTrackerService syncTrackerService,
-                            SyncFileRepository syncFileRepository) {
+                            SyncFileRepository syncFileRepository, UserRepository userRepository) {
         this.googleDriveService = googleDriveService;
         this.dropboxService = dropboxService;
         this.syncTrackerService = syncTrackerService;
@@ -234,7 +237,7 @@ public class CloudSyncService {
     }
 
 
-    public void bidirectionalSync(String gDriveToken, String dropboxToken) throws Exception {
+    public void bidirectionalSync(String gDriveToken, String dropboxToken, User user) throws Exception {
         List<Map<String, Object>> gFiles = googleDriveService.listFilesInSyncFolder(gDriveToken);
         List<Map<String, Object>> dFiles = dropboxService.listFilesInSyncFolder(dropboxToken);
 
@@ -268,10 +271,10 @@ public class CloudSyncService {
 
             if (tracked == null) {
                 // New file in Google Drive
-                handleNewGoogleDriveFile(gFile, dFileMap, gDriveToken, dropboxToken);
+                handleNewGoogleDriveFile(gFile, dFileMap, gDriveToken, dropboxToken,user);
             } else {
                 // File is tracked - check for updates/renames
-                boolean wasRenamed = handleTrackedGoogleDriveFile(tracked, gFile, dFileMap, gDriveToken, dropboxToken);
+                boolean wasRenamed = handleTrackedGoogleDriveFile(tracked, gFile, dFileMap, gDriveToken, dropboxToken,user);
                 if (wasRenamed && tracked.getDropboxFileId() != null) {
                     filesRenamedFromGDrive.add(tracked.getDropboxFileId());
                 }
@@ -285,7 +288,7 @@ public class CloudSyncService {
 
             if (tracked == null) {
                 // New file in Dropbox (might already be processed from GDrive side)
-                handleNewDropboxFile(dFile, gFileMap, dropboxToken, gDriveToken);
+                handleNewDropboxFile(dFile, gFileMap, dropboxToken, gDriveToken,user);
             } else {
                 // Skip if this file was already renamed from Google Drive in this cycle
                 if (filesRenamedFromGDrive.contains(dropboxFileId)) {
@@ -294,7 +297,7 @@ public class CloudSyncService {
                 }
 
                 // File is tracked - check for updates/renames
-                boolean wasRenamed = handleTrackedDropboxFile(tracked, dFile, gFileMap, dropboxToken, gDriveToken);
+                boolean wasRenamed = handleTrackedDropboxFile(tracked, dFile, gFileMap, dropboxToken, gDriveToken,user);
                 if (wasRenamed && tracked.getGoogleDriveFileId() != null) {
                     filesRenamedFromDropbox.add(tracked.getGoogleDriveFileId());
                 }
@@ -308,7 +311,7 @@ public class CloudSyncService {
     // Modified method to return boolean indicating if rename occurred
     private boolean handleTrackedGoogleDriveFile(SyncFile tracked, Map<String, Object> gFile,
                                                  Map<String, Map<String, Object>> dFileMap,
-                                                 String gDriveToken, String dropboxToken) {
+                                                 String gDriveToken, String dropboxToken,User user) {
         String gDriveFileId = (String) gFile.get("id");
         String currentName = (String) gFile.get("name");
         String currentHash = (String) gFile.get("md5Checksum");
@@ -344,14 +347,14 @@ public class CloudSyncService {
                 if (tracked.getDropboxFileId() != null) {
                     Map<String, Object> dropboxFile = dFileMap.get(tracked.getDropboxFileId());
                     if (dropboxFile != null) {
-                        resolveContentConflict(tracked, gFile, dropboxFile, gDriveToken, dropboxToken);
+                        resolveContentConflict(tracked, gFile, dropboxFile, gDriveToken, dropboxToken,user);
                     } else {
                         // Dropbox file was deleted - upload new version
-                        uploadFromGoogleDriveToDropbox(gFile, gDriveToken, dropboxToken);
+                        uploadFromGoogleDriveToDropbox(gFile, gDriveToken, dropboxToken,user);
                     }
                 } else {
                     // No Dropbox counterpart - upload to Dropbox
-                    uploadFromGoogleDriveToDropbox(gFile, gDriveToken, dropboxToken);
+                    uploadFromGoogleDriveToDropbox(gFile, gDriveToken, dropboxToken,user);
                 }
             }
 
@@ -367,7 +370,7 @@ public class CloudSyncService {
     // Similarly modify handleTrackedDropboxFile to return boolean
     private boolean handleTrackedDropboxFile(SyncFile tracked, Map<String, Object> dFile,
                                              Map<String, Map<String, Object>> gFileMap,
-                                             String dropboxToken, String gDriveToken) {
+                                             String dropboxToken, String gDriveToken,User user) {
         String dropboxFileId = (String) dFile.get("id");
         String currentName = (String) dFile.get("name");
         String currentHash = (String) dFile.get("contentHash");
@@ -403,14 +406,14 @@ public class CloudSyncService {
                 if (tracked.getGoogleDriveFileId() != null) {
                     Map<String, Object> gDriveFile = gFileMap.get(tracked.getGoogleDriveFileId());
                     if (gDriveFile != null) {
-                        resolveContentConflict(tracked, gDriveFile, dFile, gDriveToken, dropboxToken);
+                        resolveContentConflict(tracked, gDriveFile, dFile, gDriveToken, dropboxToken,user);
                     } else {
                         // Google Drive file was deleted - upload new version
-                        uploadFromDropboxToGoogleDrive(dFile, dropboxToken, gDriveToken);
+                        uploadFromDropboxToGoogleDrive(dFile, dropboxToken, gDriveToken,user);
                     }
                 } else {
                     // No Google Drive counterpart - upload to Google Drive
-                    uploadFromDropboxToGoogleDrive(dFile, dropboxToken, gDriveToken);
+                    uploadFromDropboxToGoogleDrive(dFile, dropboxToken, gDriveToken,user);
                 }
             }
 
@@ -425,7 +428,7 @@ public class CloudSyncService {
 
     // -------------------- CONFLICT RESOLUTION --------------------
     private void resolveContentConflict(SyncFile tracked, Map<String, Object> gFile,
-                                        Map<String, Object> dFile, String gDriveToken, String dropboxToken) {
+                                        Map<String, Object> dFile, String gDriveToken, String dropboxToken,User user) {
         String fileName = (String) gFile.get("name");
         String gDriveHash = (String) gFile.get("md5Checksum");
         String dropboxHash = (String) dFile.get("contentHash");
@@ -443,7 +446,7 @@ public class CloudSyncService {
                 dropboxService.uploadFileToSyncFolder(dropboxToken, multipartFile);
 
                 syncTrackerService.updateSyncFile(fileName, tracked.getDropboxFileId(),
-                        tracked.getGoogleDriveFileId(), gDriveHash, gDriveHash, "SYNCED");
+                        tracked.getGoogleDriveFileId(), gDriveHash, gDriveHash, "SYNCED",user);
 
                 syncTrackerService.logHistory("CONFLICT_RESOLUTION", "GOOGLE_DRIVE", "DROPBOX",
                         fileName, "SUCCESS", "GDrive newer - updated Dropbox");
@@ -484,7 +487,7 @@ public class CloudSyncService {
     }
 
     // -------------------- UPLOAD OPERATIONS --------------------
-    private void uploadFromGoogleDriveToDropbox(Map<String, Object> gFile, String gDriveToken, String dropboxToken) throws Exception {
+    private void uploadFromGoogleDriveToDropbox(Map<String, Object> gFile, String gDriveToken, String dropboxToken, User user) throws Exception {
         String fileName = (String) gFile.get("name");
         String gDriveFileId = (String) gFile.get("id");
         String gDriveHash = (String) gFile.get("md5Checksum");
@@ -496,12 +499,12 @@ public class CloudSyncService {
         dropboxService.uploadFileToSyncFolder(dropboxToken, multipartFile);
 
         // Get the uploaded file metadata to get Dropbox ID and hash
-        Map<String, Object> uploadedFile = dropboxService.getFileMetadata(dropboxToken, "/CloudSync/" + fileName);
+        Map<String, Object> uploadedFile = dropboxService.getFileMetadata(dropboxToken, "/CloudSyncFolder/" + fileName);
         String dropboxFileId = (String) uploadedFile.get("id");
         String dropboxHash = (String) uploadedFile.get("contentHash");
 
         syncTrackerService.updateSyncFile(fileName, dropboxFileId, gDriveFileId,
-                dropboxHash, gDriveHash, "SYNCED");
+                dropboxHash, gDriveHash, "SYNCED",user);
 
         syncTrackerService.logHistory("UPLOAD", "GOOGLE_DRIVE", "DROPBOX",
                 fileName, "SUCCESS", null);
@@ -509,7 +512,7 @@ public class CloudSyncService {
         System.out.println("Uploaded from Google Drive to Dropbox: " + fileName);
     }
 
-    private void uploadFromDropboxToGoogleDrive(Map<String, Object> dFile, String dropboxToken, String gDriveToken) throws Exception {
+    private void uploadFromDropboxToGoogleDrive(Map<String, Object> dFile, String dropboxToken, String gDriveToken, User user) throws Exception {
         String fileName = (String) dFile.get("name");
         String dropboxFileId = (String) dFile.get("id");
         String dropboxHash = (String) dFile.get("contentHash");
@@ -530,7 +533,7 @@ public class CloudSyncService {
         String gDriveHash = (String) uploadedFile.get("md5Checksum");
 
         syncTrackerService.updateSyncFile(fileName, dropboxFileId, gDriveFileId,
-                dropboxHash, gDriveHash, "SYNCED");
+                dropboxHash, gDriveHash, "SYNCED",user);
 
         syncTrackerService.logHistory("UPLOAD", "DROPBOX", "GOOGLE_DRIVE",
                 fileName, "SUCCESS", null);
@@ -619,7 +622,7 @@ public class CloudSyncService {
     }
 
     // -------------------- ONE-WAY SYNC METHODS (Updated) --------------------
-    public void oneWaySyncDropboxToGDrive(String dropboxToken, String gDriveToken) throws Exception {
+    public void oneWaySyncDropboxToGDrive(String dropboxToken, String gDriveToken, User user) throws Exception {
         List<Map<String, Object>> dropboxFiles = dropboxService.listFilesInSyncFolder(dropboxToken);
 
         for (Map<String, Object> dFile : dropboxFiles) {
@@ -632,18 +635,18 @@ public class CloudSyncService {
 
             if (tracked.isEmpty()) {
                 // New file - upload to Google Drive
-                uploadFromDropboxToGoogleDrive(dFile, dropboxToken, gDriveToken);
+                uploadFromDropboxToGoogleDrive(dFile, dropboxToken, gDriveToken,user);
             } else {
                 // Check if content changed
                 if (!Objects.equals(dropboxHash, tracked.get().getDropboxHash())) {
                     // Content changed - update Google Drive
-                    uploadFromDropboxToGoogleDrive(dFile, dropboxToken, gDriveToken);
+                    uploadFromDropboxToGoogleDrive(dFile, dropboxToken, gDriveToken,user);
                 }
             }
         }
     }
 
-    public void oneWaySyncGDriveToDropbox(String gDriveToken, String dropboxToken) throws Exception {
+    public void oneWaySyncGDriveToDropbox(String gDriveToken, String dropboxToken, User user) throws Exception {
         List<Map<String, Object>> gDriveFiles = googleDriveService.listFilesInSyncFolder(gDriveToken);
 
         for (Map<String, Object> gFile : gDriveFiles) {
@@ -656,12 +659,12 @@ public class CloudSyncService {
 
             if (tracked.isEmpty()) {
                 // New file - upload to Dropbox
-                uploadFromGoogleDriveToDropbox(gFile, gDriveToken, dropboxToken);
+                uploadFromGoogleDriveToDropbox(gFile, gDriveToken, dropboxToken,user);
             } else {
                 // Check if content changed
                 if (!Objects.equals(gDriveHash, tracked.get().getGoogleHash())) {
                     // Content changed - update Dropbox
-                    uploadFromGoogleDriveToDropbox(gFile, gDriveToken, dropboxToken);
+                    uploadFromGoogleDriveToDropbox(gFile, gDriveToken, dropboxToken,user);
                 }
             }
         }
@@ -701,11 +704,12 @@ public class CloudSyncService {
     // -------------------- UPDATED HANDLE NEW FILE METHODS --------------------
     private void handleNewGoogleDriveFile(Map<String, Object> gFile,
                                           Map<String, Map<String, Object>> dFileMap,
-                                          String gDriveToken, String dropboxToken) {
+                                          String gDriveToken, String dropboxToken,User user) {
         String gDriveFileId = (String) gFile.get("id");
         String fileName = (String) gFile.get("name");
         String gDriveHash = (String) gFile.get("md5Checksum");
         Long fileSize = (Long) gFile.get("size");
+
 
         try {
             // First check if this file is already tracked
@@ -720,9 +724,7 @@ public class CloudSyncService {
                     syncFile.setFileName(fileName); // update name in DB
                     syncFileRepository.save(syncFile);
                     syncTrackerService.logHistory("RENAME", "GOOGLE_DRIVE", "DROPBOX", fileName, "SUCCESS", "Renamed Dropbox to match GDrive");
-                return;
                 }
-
                 return; // Skip further sync, already tracked
             }
 
@@ -739,7 +741,7 @@ public class CloudSyncService {
                     String dropboxHash = (String) matchingDropboxFile.get("contentHash");
 
                     syncTrackerService.updateSyncFile(fileName, dropboxFileId, gDriveFileId,
-                            dropboxHash, gDriveHash, "SYNCED");
+                            dropboxHash, gDriveHash, "SYNCED",user);
 
                     syncTrackerService.logHistory("LINK", "GOOGLE_DRIVE", "DROPBOX",
                             fileName, "SUCCESS", "Linked existing files with same name and size");
@@ -748,7 +750,8 @@ public class CloudSyncService {
                 }
             } else {
                 // New file - upload to Dropbox
-                uploadFromGoogleDriveToDropbox(gFile, gDriveToken, dropboxToken);
+//                System.out.println(" This is the GFile : "+gFile);
+                uploadFromGoogleDriveToDropbox(gFile, gDriveToken, dropboxToken,user);
             }
 
         } catch (Exception e) {
@@ -760,7 +763,7 @@ public class CloudSyncService {
 
     private void handleNewDropboxFile(Map<String, Object> dFile,
                                       Map<String, Map<String, Object>> gFileMap,
-                                      String dropboxToken, String gDriveToken) {
+                                      String dropboxToken, String gDriveToken,User user) {
         String dropboxFileId = (String) dFile.get("id");
         String fileName = (String) dFile.get("name");
         String dropboxHash = (String) dFile.get("contentHash");
@@ -798,7 +801,7 @@ public class CloudSyncService {
                     String gDriveHash = (String) matchingGoogleFile.get("md5Checksum");
 
                     syncTrackerService.updateSyncFile(fileName, dropboxFileId, gDriveFileId,
-                            dropboxHash, gDriveHash, "SYNCED");
+                            dropboxHash, gDriveHash, "SYNCED",user);
 
                     syncTrackerService.logHistory("LINK", "DROPBOX", "GOOGLE_DRIVE",
                             fileName, "SUCCESS", "Linked existing files with same name and size");
@@ -807,7 +810,7 @@ public class CloudSyncService {
                 }
             } else {
                 // New file - upload to Google Drive
-                uploadFromDropboxToGoogleDrive(dFile, dropboxToken, gDriveToken);
+                uploadFromDropboxToGoogleDrive(dFile, dropboxToken, gDriveToken,user);
             }
 
         } catch (Exception e) {
@@ -818,6 +821,3 @@ public class CloudSyncService {
     }
 
 }
-
-
-
