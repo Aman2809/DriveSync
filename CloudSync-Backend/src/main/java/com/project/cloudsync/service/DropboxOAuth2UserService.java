@@ -46,11 +46,16 @@ public class DropboxOAuth2UserService implements OAuth2UserService<OAuth2UserReq
         System.out.println("Dropbox token scopes: " + userRequest.getAccessToken().getScopes());
         System.out.println("Dropbox token type: " + userRequest.getAccessToken().getTokenType().getValue());
 
+        System.out.println("STEP 1");
         DbxRequestConfig config = DbxRequestConfig.newBuilder("cloudsync").build();
 
         try {
+            System.out.println("STEP 2");
             DbxClientV2 client = new DbxClientV2(config, accessToken);
+            System.out.println("STEP 3");
             FullAccount account = client.users().getCurrentAccount();
+
+            System.out.println("STEP 4");
 
             System.out.println("Dropbox user: " + account.getEmail());
             System.out.println("Dropbox account ID: " + account.getAccountId());
